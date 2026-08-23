@@ -1,0 +1,2356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Quest — Pixel RPG Adventure</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chewy&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #111; overflow: hidden; }
+    #canvas { display: block; image-rendering: pixelated; touch-action: none; }
+    #canvas.cell-selecting { cursor: crosshair; }
+
+    /* ── Interaction prompt ── */
+    #interact-hint {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -130%);
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      padding: 6px 12px;
+      border: 2px solid #ffcc00;
+      border-radius: 4px;
+      pointer-events: none;
+      display: none;
+      z-index: 10;
+    }
+
+    /* ── RPGMaker-style dialog window (anchored inside the game canvas) ── */
+    #dialog {
+      position: fixed;
+      display: none;
+      z-index: 20;
+      font-family: 'Courier New', monospace;
+      color: #f2f4ff;
+      cursor: pointer;
+      -webkit-user-select: none;
+      user-select: none;
+      image-rendering: pixelated;
+    }
+    #dialog.open { display: block; }
+
+    /* Character portraits flanking the dialogue window */
+    #dialog .dialog-portrait {
+      position: absolute;
+      bottom: 100%;
+      margin-bottom: -6px;
+      height: 260px;
+      max-height: 42vh;
+      image-rendering: pixelated;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .18s ease, filter .18s ease, transform .18s ease;
+    }
+    #dialog .dialog-portrait.show { opacity: 1; }
+    #dialog .dialog-portrait.dim { opacity: .75; filter: brightness(.55); transform: scale(.94); }
+    #dialog .dialog-portrait.left  { left: 2%; transform-origin: bottom left; }
+    #dialog .dialog-portrait.right { right: 2%; transform-origin: bottom right; }
+
+
+    #dialog .dialog-window {
+      position: relative;
+      background: rgba(0,0,0,0.62);
+      border: 2px solid rgba(255,255,255,0.22);
+      border-radius: 6px;
+      box-shadow:
+        inset 0 0 0 1px rgba(255,255,255,0.08),
+        0 4px 18px rgba(0,0,0,0.45);
+      backdrop-filter: blur(2px);
+      padding: 16px 20px 18px;
+      min-height: 96px;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    /* Name plate sits on top-left edge of the window, RPGMaker MZ style */
+    #dialog .dialog-nameplate {
+      position: absolute;
+      top: -18px;
+      left: 14px;
+      display: none;
+      padding: 4px 14px;
+      background: rgba(0,0,0,0.75);
+      border: 2px solid rgba(255,255,255,0.22);
+      border-radius: 5px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+      font-weight: bold;
+      font-size: 16px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      text-shadow: 0 2px 0 rgba(0,0,0,0.75);
+      white-space: nowrap;
+    }
+    #dialog.has-name .dialog-nameplate { display: block; }
+
+    #dialog .dialog-text {
+      font-family: 'Chewy', 'Arial Black', sans-serif;
+      font-size: 46px;
+      line-height: 1.28;
+      word-spacing: 0.12em;
+      text-shadow: 0 2px 0 rgba(0,0,0,0.7);
+      white-space: pre-wrap;
+      min-height: 2.8em;
+      width: 100%;
+      display: flex;
+      align-items: center;
+    }
+
+
+    /* Blinking "continue" arrow at the bottom of the window */
+    #dialog .dialog-arrow {
+      position: absolute;
+      right: 16px;
+      bottom: 8px;
+      width: 0;
+      height: 0;
+      border-left: 7px solid transparent;
+      border-right: 7px solid transparent;
+      border-top: 9px solid rgba(200,220,255,0.9);
+      opacity: 0;
+      animation: dialogArrow 0.9s steps(1, end) infinite;
+    }
+    #dialog.ready .dialog-arrow { opacity: 1; }
+
+    /* ── Choice list (Yes / No prompts) ── */
+    #dialog .dialog-choices {
+      display: none;
+      margin-top: 12px;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+    }
+    #dialog.has-choices .dialog-choices { display: flex; }
+    #dialog.has-choices .dialog-arrow { display: none; }
+    #dialog .dialog-choice {
+      font-family: inherit;
+      font-size: 36px;
+      color: #f2f4ff;
+      background: rgba(0,0,0,0.55);
+      border: 2px solid rgba(255,255,255,0.22);
+      border-radius: 5px;
+      padding: 10px 28px;
+      letter-spacing: 1px;
+      cursor: pointer;
+      text-shadow: 0 2px 0 rgba(0,0,0,0.7);
+    }
+    #dialog .dialog-choice.selected {
+      border-color: rgba(200,220,255,0.95);
+      background: rgba(60,80,130,0.7);
+    }
+
+    @keyframes dialogArrow {
+      0%, 49%   { transform: translateY(0); }
+      50%, 100% { transform: translateY(4px); }
+    }
+
+    /* ── Mobile D-pad ── */
+    #dpad {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      width: 138px;
+      height: 138px;
+      display: none;
+      z-index: 15;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .dpad-btn {
+      position: absolute;
+      width: 42px;
+      height: 42px;
+      background: rgba(255,255,255,0.15);
+      border: 2px solid rgba(255,255,255,0.35);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      color: rgba(255,255,255,0.8);
+      cursor: pointer;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .dpad-btn:active, .dpad-btn.pressed {
+      background: rgba(255,255,255,0.35);
+      border-color: rgba(255,255,255,0.7);
+    }
+    #dpad-up    { top: 0;    left: 48px; }
+    #dpad-left  { top: 48px; left: 0;    }
+    #dpad-center{ top: 48px; left: 48px; background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
+    #dpad-right { top: 48px; left: 96px; }
+    #dpad-down  { top: 96px; left: 48px; }
+
+    /* ── Mobile E button ── */
+    #btn-e {
+      position: fixed;
+      bottom: 60px;
+      right: 24px;
+      width: 54px;
+      height: 54px;
+      background: rgba(102,153,204,0.25);
+      border: 2px solid rgba(102,153,204,0.6);
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', monospace;
+      font-size: 18px;
+      font-weight: bold;
+      color: #fff;
+      cursor: pointer;
+      z-index: 15;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #btn-e:active { background: rgba(102,153,204,0.5); }
+
+    /* ── Dev tools ── */
+    #dev-tools {
+      position: fixed;
+      top: 8px;
+      right: 12px;
+      z-index: 25;
+      width: 190px;
+      color: rgba(255,255,255,0.9);
+      font-family: monospace;
+      font-size: 11px;
+    }
+    #dev-label {
+      display: block;
+      color: rgba(255,200,80,0.9);
+      background: rgba(0,0,0,0.68);
+      padding: 4px 6px;
+      border-radius: 3px;
+      text-align: right;
+    }
+    #cell-selector {
+      margin-top: 6px;
+      background: rgba(10,10,20,0.9);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 5px;
+      padding: 8px;
+    }
+    #cell-selector label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      color: #fff;
+      font-weight: bold;
+    }
+    #cell-selector input {
+      width: 14px;
+      height: 14px;
+      margin: 0;
+      accent-color: #66ccff;
+      cursor: pointer;
+    }
+    #cell-selector-help {
+      margin-top: 5px;
+      color: rgba(210,225,240,0.72);
+      line-height: 1.4;
+    }
+    #grid-outputs {
+      margin-top: 6px;
+      background: rgba(10,10,20,0.9);
+      border: 1px solid rgba(102,204,255,0.45);
+      border-radius: 5px;
+      padding: 8px;
+      display: none;
+    }
+    #grid-outputs.visible {
+      display: block;
+    }
+    #grid-outputs-title {
+      color: #66ccff;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+    #grid-outputs-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      max-height: 130px;
+      overflow-y: auto;
+    }
+    .grid-output {
+      color: #07111a;
+      background: #9de5ff;
+      border-radius: 3px;
+      padding: 2px 4px;
+      font-size: 10px;
+      font-weight: bold;
+    }
+    #grid-outputs-empty {
+      color: rgba(255,255,255,0.55);
+    }
+
+    /* ── Save / Load controls ── */
+    #loading-screen {
+      position: fixed; inset: 0; z-index: 999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; background: #07080d; color: #e8e8f0;
+      font-family: 'Chewy', cursive; letter-spacing: 3px;
+      transition: opacity .35s ease;
+    }
+    #loading-screen.hidden { opacity: 0; pointer-events: none; }
+
+    #scene-fade {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 260ms ease;
+      z-index: 60;
+    }
+    #scene-fade.active { opacity: 1; }
+    #loading-title { font-size: 18px; }
+    #load-bar {
+      width: min(360px, 60vw); height: 12px;
+      border: 2px solid rgba(255,255,255,0.35); background: rgba(255,255,255,0.06);
+    }
+    #load-bar-fill { height: 100%; width: 0%; background: #fff; transition: width .2s ease; }
+    #load-pct { font-size: 13px; opacity: .8; }
+    #scene-controls {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      z-index: 22;
+      font-family: 'Courier New', monospace;
+    }
+    .scene-btn {
+      background: rgba(10,10,30,0.9);
+      border: 2px solid #6699cc;
+      border-radius: 6px;
+      color: #dbeaff;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      padding: 8px 22px;
+      cursor: pointer;
+    }
+    .scene-btn:hover { background: rgba(40,70,120,0.95); color: #fff; }
+
+    /* ── Save / Load overlay ── */
+    #slots-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 70;
+      font-family: 'Courier New', monospace;
+    }
+    #slots-overlay.open { display: flex; }
+
+    /* ── Computer screen view ── */
+    #computer-view {
+      position: fixed;
+      display: none;
+      z-index: 30;
+      background: #000;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+    }
+    #computer-view.open { display: block; }
+    #computer-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+      display: block;
+    }
+    #computer-exit {
+      position: absolute;
+      left: 3%;
+      bottom: 4%;
+      background: rgba(0,0,0,0.62);
+      backdrop-filter: blur(2px);
+      border: 2px solid #6699cc;
+      border-radius: 6px;
+      color: #dbeaff;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      padding: 10px 24px;
+      cursor: pointer;
+    }
+    #computer-exit:hover { background: rgba(40,70,120,0.95); color: #fff; }
+    #slots-panel {
+      width: min(760px, 94vw);
+      max-height: 90vh;
+      overflow-y: auto;
+      background: #000;
+      border: 3px solid #ffcc00;
+      border-radius: 10px;
+      padding: 18px;
+      color: #eef;
+    }
+    #slots-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    #slots-title { color: #ffcc00; font-weight: bold; letter-spacing: 1px; }
+    #slots-close {
+      background: none;
+      border: 1px solid rgba(255,255,255,0.4);
+      border-radius: 4px;
+      color: #eef;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 3px 9px;
+    }
+    #slots-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .slot {
+      border: 2px dashed rgba(255,255,255,0.28);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.04);
+      padding: 12px;
+      min-height: 108px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .slot:hover { border-color: #ffcc00; background: rgba(255,204,0,0.10); }
+    .slot.filled { border-style: solid; border-color: rgba(255,204,0,0.8); }
+    .slot.disabled { opacity: 0.4; cursor: not-allowed; }
+    .slot-index { font-size: 10px; color: rgba(255,255,255,0.5); letter-spacing: 1px; }
+    .slot-name { font-size: 14px; font-weight: bold; color: #ffcc00; }
+    .slot-meta { font-size: 11px; color: rgba(210,225,240,0.75); line-height: 1.5; }
+    .slot-empty { font-size: 13px; color: rgba(255,255,255,0.45); margin: auto; }
+    .slot-actions { margin-top: auto; display: flex; gap: 6px; }
+    .slot-action {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 4px;
+      color: #ffcc00;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 10px;
+      padding: 2px 7px;
+    }
+    .slot-action:hover { background: rgba(255,204,0,0.2); }
+    #slots-pager {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin-top: 14px;
+      font-size: 12px;
+      color: rgba(255,204,0,0.85);
+    }
+    .pager-btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 4px;
+      color: #eef;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 3px 10px;
+    }
+    .pager-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    #slots-toast {
+      margin-top: 10px;
+      text-align: center;
+      font-size: 12px;
+      color: #ffcc00;
+      min-height: 16px;
+    }
+
+    /* ── In-game save name prompt ── */
+    #save-name-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.78);
+      display: none; align-items: center; justify-content: center;
+      z-index: 80; font-family: 'Chewy', cursive;
+    }
+    #save-name-overlay.open { display: flex; }
+    #save-name-panel {
+      width: min(420px, 90vw);
+      background: #000;
+      border: 3px solid #ffcc00;
+      border-radius: 10px;
+      padding: 22px;
+      display: flex; flex-direction: column; gap: 16px;
+      color: #eef;
+    }
+    #save-name-title { font-size: 24px; color: #ffcc00; text-align: center; letter-spacing: 2px; }
+    #save-name-input {
+      font-family: 'Chewy', cursive;
+      font-size: 20px;
+      background: rgba(0,0,0,0.55);
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 6px;
+      color: #fff;
+      padding: 10px 14px;
+      outline: none;
+    }
+    #save-name-input:focus { border-color: #ffcc00; }
+    #save-name-actions { display: flex; gap: 12px; justify-content: center; }
+    .save-name-btn {
+      font-family: 'Chewy', cursive;
+      font-size: 18px;
+      background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.35);
+      border-radius: 6px;
+      color: #ffcc00;
+      padding: 8px 22px;
+      cursor: pointer;
+    }
+    .save-name-btn:hover { background: rgba(255,204,0,0.25); }
+    .save-name-btn.primary { border-color: #ffcc00; background: rgba(255,204,0,0.18); }
+    .save-name-btn.primary:hover { background: rgba(255,204,0,0.35); }
+
+
+    /* ── MAIN MENU ── */
+    #main-menu {
+      position: fixed; inset: 0; z-index: 60; display: none;
+      background: #05060a center/cover no-repeat url('icons/game_main.jpg');
+      image-rendering: pixelated;
+    }
+    #main-menu.open { display: block; }
+    #main-menu::after {
+      content: ''; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(90deg, rgba(5,6,10,0) 35%, rgba(5,6,10,.75) 100%);
+    }
+    #menu-panel {
+      position: absolute; top: 50%; left: calc(50% + 30px); transform: translateY(-50%);
+      z-index: 2; display: flex; flex-direction: column; gap: 18px;
+      width: min(520px, 62vw);
+    }
+    .menu-btn {
+      font-family: 'Chewy', 'Arial Black', sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      cursor: pointer;
+      padding: 8px 0;
+      text-align: left;
+      color: #888;
+      background: none;
+      border: 0;
+      box-shadow: none;
+      text-shadow: 2px 2px 0 #000;
+      transform-origin: left center;
+      position: relative;
+      align-self: flex-start;
+      width: auto;
+      padding-left: 48px;
+    }
+    .menu-btn::before {
+      content: '>';
+      position: absolute;
+      left: 0;
+      color: #fff;
+      opacity: 0;
+      margin-right: 0;
+    }
+    .menu-btn.selected {
+      color: #fff;
+      font-size: 34px;
+      animation: menu-flicker .9s steps(1,end) infinite;
+    }
+    .menu-btn.selected::before { opacity: 1; }
+    .menu-btn:disabled { opacity: .35; cursor: not-allowed; }
+    .menu-btn:disabled.selected { color: #888; }
+    @keyframes menu-flicker {
+      0%, 100% { opacity: 1; }
+      45% { opacity: 1; }
+      50% { opacity: .45; }
+      60% { opacity: 1; }
+      70% { opacity: .6; }
+      78% { opacity: 1; }
+    }
+    #settings-panel { display: none; flex-direction: column; gap: 12px; }
+    #settings-panel.open { display: flex; }
+    #menu-main.hidden { display: none; }
+    .set-row {
+      display: flex; align-items: center; justify-content: flex-start; gap: 16px; align-self: flex-start;
+      font-size: 20px; color: #888; text-shadow: 2px 2px 0 #000; padding: 8px 0;
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<div id="interact-hint">[E]</div>
+<style>
+  #objective {
+    position: fixed; top: 14px; left: 14px; z-index: 12; display: none;
+    max-width: min(360px, 46vw);
+    background: rgba(10,12,20,0.82); border: 2px solid #6f7bd4;
+    border-left: 6px solid #ffcc00; border-radius: 3px;
+    padding: 8px 12px; font-family: 'Courier New', monospace; color: #eef1ff;
+    pointer-events: none;
+  }
+  #objective .obj-label { font-size: 10px; letter-spacing: 3px; color: #ffcc00; opacity: .9; }
+  #objective .obj-text { font-size: 13px; line-height: 1.35; margin-top: 3px; }
+
+  #computer-inbox {
+    position: absolute; inset: 12% 9% 16% 9%; overflow-y: auto;
+    font-family: 'Courier New', monospace; color: #cfe9ff; text-shadow: 0 0 6px rgba(80,180,255,.5);
+  }
+  #computer-inbox .mail { border-bottom: 1px solid rgba(120,200,255,.25); padding: 8px 4px; }
+  #computer-inbox .mail-from { font-size: 12px; color: #7fd6ff; letter-spacing: 1px; }
+  #computer-inbox .mail-subj { font-size: 14px; color: #fff; margin: 2px 0; }
+  #computer-inbox .mail-body { font-size: 12px; opacity: .85; line-height: 1.4; }
+
+  #chapter-end {
+    position: fixed; inset: 0; z-index: 60; display: none;
+    background: #000; color: #f2f4ff; font-family: 'Courier New', monospace;
+    flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center;
+    animation: fadeIn 1.6s ease both;
+  }
+  #chapter-end.open { display: flex; }
+  #chapter-end .ce-kicker { letter-spacing: 8px; font-size: 12px; color: #7ab8ff; }
+  #chapter-end .ce-title { font-family: 'Chewy', cursive; font-size: clamp(34px, 7vw, 72px); }
+  #chapter-end .ce-note { max-width: 560px; font-size: 13px; line-height: 1.7; opacity: .75; padding: 0 20px; }
+  #chapter-end button {
+    margin-top: 10px; background: transparent; color: #f2f4ff; border: 2px solid #6f7bd4;
+    padding: 10px 22px; letter-spacing: 3px; font-family: inherit; cursor: pointer;
+  }
+  #chapter-end button:hover { background: rgba(111,123,212,.25); }
+  @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+</style>
+
+<div id="objective">
+  <div class="obj-label">OBJECTIVE</div>
+  <div class="obj-text" id="objective-text"></div>
+</div>
+
+<div id="chapter-end">
+  <div class="ce-kicker">CHAPTER ONE</div>
+  <div class="ce-title">Cold Water</div>
+  <div class="ce-note" id="ce-note"></div>
+  <button type="button" id="ce-close">CONTINUE</button>
+</div>
+
+<div id="computer-view">
+  <img id="computer-img" src="assets/computer_screen.png" alt="Computer screen">
+  <div id="computer-inbox"></div>
+  <button type="button" id="computer-exit">EXIT</button>
+</div>
+<div id="dialog">
+  <img class="dialog-portrait left"  id="portrait-left"  alt="">
+  <img class="dialog-portrait right" id="portrait-right" alt="">
+  <div class="dialog-window">
+    <div class="dialog-nameplate" id="dialog-name"></div>
+    <div class="dialog-text" id="dialog-text"></div>
+    <div class="dialog-choices" id="dialog-choices"></div>
+    <div class="dialog-arrow"></div>
+  </div>
+</div>
+
+<!-- Mobile D-pad -->
+<div id="dpad">
+  <div class="dpad-btn" id="dpad-up">▲</div>
+  <div class="dpad-btn" id="dpad-left">◀</div>
+  <div class="dpad-btn" id="dpad-center"></div>
+  <div class="dpad-btn" id="dpad-right">▶</div>
+  <div class="dpad-btn" id="dpad-down">▼</div>
+</div>
+<div id="btn-e">E</div>
+
+<div id="scene-controls">
+  <button class="scene-btn" id="btn-save" type="button">SAVE</button>
+  <button class="scene-btn" id="btn-load" type="button">LOAD</button>
+</div>
+
+
+<div id="main-menu">
+  <div id="menu-panel">
+    
+    <div id="menu-main" style="display:flex;flex-direction:column;gap:14px">
+      <button class="menu-btn" id="menu-new" type="button">NEW GAME</button>
+      <button class="menu-btn" id="menu-continue" type="button">CONTINUE</button>
+      <button class="menu-btn" id="menu-load" type="button">LOAD</button>
+      <button class="menu-btn" id="menu-settings" type="button">SETTINGS</button>
+    </div>
+    <div id="settings-panel">
+      <label class="set-row"><span>TOUCH CONTROLS</span><input id="set-touch" type="checkbox"></label>
+      <label class="set-row"><span>SHOW [E] HINT</span><input id="set-hint" type="checkbox" checked></label>
+      <button class="menu-btn" id="menu-back" type="button">BACK</button>
+    </div>
+  </div>
+</div>
+
+<div id="slots-overlay">
+  <div id="slots-panel">
+    <div id="slots-header">
+      <div id="slots-title">SAVE GAME</div>
+      <button id="slots-close" type="button">CLOSE</button>
+    </div>
+    <div id="slots-grid"></div>
+    <div id="slots-pager">
+      <button class="pager-btn" id="slots-prev" type="button">◀ PREV</button>
+      <span id="slots-page-label">Page 1 / 10</span>
+      <button class="pager-btn" id="slots-next" type="button">NEXT ▶</button>
+    </div>
+    <div id="slots-toast"></div>
+  </div>
+</div>
+
+<div id="save-name-overlay">
+  <div id="save-name-panel">
+    <div id="save-name-title">NAME THIS SAVE</div>
+    <input id="save-name-input" type="text" placeholder="Save name (optional)" maxlength="32">
+    <div id="save-name-actions">
+      <button class="save-name-btn primary" id="save-name-confirm" type="button">CONFIRM</button>
+      <button class="save-name-btn" id="save-name-cancel" type="button">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<script>var DEV_MODE = new URLSearchParams(location.search).has("dev");
+window.addEventListener("DOMContentLoaded",function(){if(DEV_MODE){var dt=document.getElementById("dev-tools");if(dt)dt.style.display="";["cell-selector","grid-outputs"].forEach(function(id){var e=document.getElementById(id);if(e)e.style.display="";});}});</script>
+<div id="dev-tools" style="display:none">
+  <div id="dev-label">DEV MODE — <span id="scene-name">scene-1</span> &nbsp;|&nbsp; Grid: 32×20 &nbsp;|&nbsp; <span id="cell-pos">C0R0</span></div>
+  <div id="cell-selector" style="display:none">
+    <label for="select-cells">
+      <input id="select-cells" type="checkbox">
+      Select Cells
+    </label>
+    <div id="cell-selector-help">Hold and drag across the room grid.</div>
+  </div>
+  <div id="grid-outputs" style="display:none">
+    <div id="grid-outputs-title">Grid Outputs <span id="grid-output-count">(0)</span></div>
+    <div id="grid-outputs-list"><span id="grid-outputs-empty">No cells selected</span></div>
+  </div>
+</div>
+
+<div id="loading-screen">
+  <div id="loading-title">LOADING</div>
+  <div id="load-bar"><div id="load-bar-fill"></div></div>
+  <div id="load-pct">0%</div>
+</div>
+
+<div id="scene-fade"></div>
+
+<script src="story.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════
+//  CONFIGURATION
+// ═══════════════════════════════════════════════════════════
+let ROOM_W   = 1485;
+let ROOM_H   = 1059;
+// Reference stage: every scene is rendered inside this box (scene-1's own
+// resolution), so a smaller/rectangular background is scaled DOWN to fit
+// rather than being blown up to fill the canvas.
+let STAGE_W  = 1254;
+let STAGE_H  = 1254;
+let ROOM_FIT = 1;      // how much the current room is shrunk inside the stage
+let stageLeft = 0, stageTop = 0, stageW = 0, stageH = 0;
+const COLS     = 32;
+const ROWS     = 20;
+let CELL_W   = ROOM_W / COLS;
+let CELL_H   = ROOM_H / ROWS;
+
+// Player speed / character height are kept proportional to the room so the
+// character looks the same size in every scene, whatever the image resolution.
+const SPEED_RATIO = 280 / 1059;
+const CHAR_RATIO  = 160 / 1059;
+let PLAYER_SPEED = SPEED_RATIO * ROOM_H;
+let CHAR_H       = CHAR_RATIO * ROOM_H;
+
+// Walk-bob amplitude and frequency
+let BOB_AMP  = 3;   // room-pixels
+const BOB_FREQ = 8;   // cycles per second (while moving)
+
+// ── Scenes / characters come from story.js ─────────────
+const SCENES     = window.STORY.scenes;
+const CHARACTERS = window.STORY.characters;
+
+// ── Story flags (Chapter 1 state) ──────────────────────
+let FLAGS = Object.assign({}, window.STORY.initialFlags);
+function deriveFlags() { window.STORY.derive(FLAGS); }
+function resetStory() {
+  FLAGS = Object.assign({}, window.STORY.initialFlags);
+  deriveFlags();
+  updateObjective();
+}
+function applyEffects(node) {
+  if (!node) return;
+  if (node.set) {
+    Object.keys(node.set).forEach(k => {
+      const v = node.set[k];
+      if (k === 'trust') FLAGS.trust = (FLAGS.trust || 0) + v;
+      else FLAGS[k] = v;
+    });
+    deriveFlags();
+  }
+  if (typeof node.objective === 'string') OBJECTIVE_OVERRIDE = node.objective;
+  refreshScene();
+  updateObjective();
+}
+let OBJECTIVE_OVERRIDE = null;
+function updateObjective() {
+  const el = document.getElementById('objective-text');
+  const box = document.getElementById('objective');
+  if (!el || !box) return;
+  const text = window.STORY.objectiveFor(FLAGS);
+  el.textContent = text || '';
+  box.style.display = text ? 'block' : 'none';
+}
+// Pick the first matching branch of an interact (null = nothing to do here).
+function resolveNode(def) {
+  if (!def) return null;
+  const list = def.branches || [def];
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    if (!b.when || b.when(FLAGS)) return b;
+  }
+  return null;
+}
+function refreshScene() {
+  if (!scene) return;
+  INTERACTS = buildInteracts(scene);
+  OCCUPIED = parseOccupied(scene);
+}
+function sceneProps(sc) {
+  return (sc.props || []).filter(p => !p.when || p.when(FLAGS));
+}
+
+let CURRENT_SCENE = 'scene-1';
+let scene = SCENES[CURRENT_SCENE];
+
+function parseCells(input) {
+  const set = new Set();
+  if (input === '*') {
+    for (let c = 0; c < 32; c++) for (let r = 0; r < 20; r++) set.add(`${c},${r}`);
+    return set;
+  }
+  input.replace(/C(\d+)R(\d+)/g, (_, c, r) => set.add(`${c},${r}`));
+  return set;
+}
+
+// Only these cells are walkable in the current scene; all others are blocked.
+let WALKABLE = parseCells(scene.walkable);
+
+// Cells occupied by scene characters/props — the player cannot stand on them.
+function parseOccupied(sc) {
+  const set = new Set();
+  (sceneProps(sc)).forEach(p => {
+    if (p.cell) parseCells(p.cell).forEach(k => set.add(k));
+  });
+  return set;
+}
+let OCCUPIED = parseOccupied(scene);
+
+// ── Interact-cells for the current scene ──────────────────
+// Each entry: trigger cells (Set) + the cell where the icon appears.
+function buildInteracts(sc) {
+  return (sc.interacts || []).map(def => {
+    const m = /C(\d+)R(\d+)/.exec(def.icon) || [];
+    return {
+      cells: parseCells(def.cells),
+      iconCol: Number(m[1]),
+      iconRow: Number(m[2]),
+      def: def,
+    };
+  }).filter(it => resolveNode(it.def));
+}
+let INTERACTS = buildInteracts(scene);
+
+// The interaction whose trigger cell the player is currently standing on.
+let activeInteract = null;
+
+
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+let scale = 1;        // canvas-pixels per room-pixel
+let offsetX = 0;      // canvas offset to center room
+let offsetY = 0;
+
+let player = {
+  x: (scene.spawn.col + 0.5) * CELL_W,   // scene spawn cell
+  y: (scene.spawn.row + 0.5) * CELL_H,
+  dir: 'idle',
+  moving: false,
+  bobTime: 0,
+};
+
+let keys = { up: false, down: false, left: false, right: false };
+let dialogOpen = false;
+let lastTime = 0;
+let selectMode = false;
+let selectingCells = false;
+let selectionStart = null;
+let selectedCells = new Set();
+
+// Sprite images
+const sprites = {};
+const backgrounds = {};                       // scene name → preloaded Image
+const SCENE_NAMES = Object.keys(SCENES);
+let assetsLoaded = 0;
+const TOTAL_ASSETS = 6 + 1 + 1;  // sprites/icon/computer + the starting scene background only
+
+// ═══════════════════════════════════════════════════════════
+//  ASSET LOADING
+// ═══════════════════════════════════════════════════════════
+function loadImage(key, src) {
+  const img = new Image();
+  const done = () => {
+    assetsLoaded++;
+    updateLoadProgress();
+    if (assetsLoaded === TOTAL_ASSETS) startGame();
+  };
+  img.onload  = done;
+  img.onerror = done;
+  img.src = src;
+  sprites[key] = img;
+}
+
+function updateLoadProgress() {
+  const bar = document.getElementById('load-bar-fill');
+  const pct = document.getElementById('load-pct');
+  const value = Math.round((assetsLoaded / TOTAL_ASSETS) * 100);
+  if (bar) bar.style.width = value + '%';
+  if (pct) pct.textContent = value + '%';
+}
+
+// Room metrics follow the background image's own resolution, so the 32×20 grid
+// (and the character) stay proportional in every scene.
+function applyRoomMetrics(img) {
+  if (!img || !img.naturalWidth) return;
+  ROOM_W = img.naturalWidth;
+  ROOM_H = img.naturalHeight;
+  CELL_W = ROOM_W / COLS;
+  CELL_H = ROOM_H / ROWS;
+  ROOM_FIT = Math.min(STAGE_W / ROOM_W, STAGE_H / ROOM_H) * (scene.fitScale || 1);
+  // Keep on-screen speed / character size identical across scenes: room-space
+  // values are divided by how much the room itself is scaled down.
+  PLAYER_SPEED = (SPEED_RATIO * STAGE_H) / ROOM_FIT;
+  CHAR_H = (CHAR_RATIO * STAGE_H) / ROOM_FIT;
+  BOB_AMP = ((3 / 1059) * STAGE_H) / ROOM_FIT;
+  resize();
+}
+
+function placeAtSpawn() {
+  player.x = (scene.spawn.col + 0.5) * CELL_W;
+  player.y = (scene.spawn.row + 0.5) * CELL_H;
+}
+
+// Only the starting scene blocks the loading screen; neighbours stream in later.
+loadImage('bg:' + CURRENT_SCENE, SCENES[CURRENT_SCENE].background);
+backgrounds[CURRENT_SCENE] = sprites['bg:' + CURRENT_SCENE];
+sprites.room = backgrounds[CURRENT_SCENE];
+
+// Scenes reachable from a given scene (direct goto or via a dialogue choice).
+function neighborScenes(name) {
+  const out = new Set();
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (typeof node.goto === 'string' && SCENES[node.goto]) out.add(node.goto);
+    Object.values(node).forEach(walk);
+  };
+  walk((SCENES[name] || {}).interacts || []);
+  out.delete(name);
+  return [...out];
+}
+
+// Background (non-blocking) preload of the scenes reachable from `name`.
+function preloadNeighbors(name) {
+  neighborScenes(name).forEach(n => {
+    if (backgrounds[n]) return;
+    const img = new Image();
+    img.src = SCENES[n].background;
+    backgrounds[n] = img;
+    sprites['bg:' + n] = img;
+  });
+}
+
+loadImage('idle',  'sprites/idle.png');
+loadImage('left',  'sprites/left.png');
+loadImage('right', 'sprites/right.png');
+loadImage('up',    'sprites/up.png');
+loadImage('interact', 'icons/interact.png');
+loadImage('computer', 'assets/computer_screen.png');
+loadImage('menuBg', 'icons/game_main.jpg');
+
+// Character sprites used for scene props and dialogue portraits (non-blocking).
+const CHAR_SPRITES = [
+  'june_idle', 'june_idle-a', 'june_idle-b', 'june_upset', 'june_smile', 'june_smug', 'june_anxious',
+  'july_idle', 'july_smile', 'july_angry',
+];
+CHAR_SPRITES.forEach(name => {
+  const img = new Image();
+  img.src = 'sprites/' + name + '.png';
+  sprites[name] = img;
+});
+
+// ═══════════════════════════════════════════════════════════
+//  RESIZE
+// ═══════════════════════════════════════════════════════════
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  // The stage (scene-1 sized box) is what fills the canvas.
+  const stageScale = Math.min(canvas.width / STAGE_W, canvas.height / STAGE_H);
+  stageW = STAGE_W * stageScale;
+  stageH = STAGE_H * stageScale;
+  stageLeft = (canvas.width  - stageW) / 2;
+  stageTop  = (canvas.height - stageH) / 2;
+
+  // The current room is fitted inside the stage, preserving its aspect ratio.
+  scale = stageScale * ROOM_FIT;
+  offsetX = (canvas.width  - ROOM_W * scale) / 2;
+  offsetY = (canvas.height - ROOM_H * scale) / 2;
+
+  positionSceneControls();
+  positionComputer();
+  if (dialogOpen) positionDialog();
+}
+
+function positionSceneControls() {
+  const controls = document.getElementById('scene-controls');
+  if (!controls) return;
+  const roomBottom = stageTop + stageH;
+  const top = Math.min(roomBottom + 10, window.innerHeight - 52);
+  controls.style.top = Math.max(8, top) + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ═══════════════════════════════════════════════════════════
+//  INPUT — DEV CELL SELECTOR
+// ═══════════════════════════════════════════════════════════
+const selectCellsInput = document.getElementById('select-cells');
+const gridOutputs = document.getElementById('grid-outputs');
+const gridOutputsList = document.getElementById('grid-outputs-list');
+const gridOutputCount = document.getElementById('grid-output-count');
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function roomPointFromEvent(event) {
+  return {
+    x: clamp((event.clientX - offsetX) / scale, 0, ROOM_W - 0.001),
+    y: clamp((event.clientY - offsetY) / scale, 0, ROOM_H - 0.001),
+  };
+}
+
+function cellFromRoomPoint(point) {
+  return {
+    col: clamp(Math.floor(point.x / CELL_W), 0, COLS - 1),
+    row: clamp(Math.floor(point.y / CELL_H), 0, ROWS - 1),
+  };
+}
+
+function isCellWalkable(col, row) {
+  return WALKABLE.has(`${col},${row}`) && !OCCUPIED.has(`${col},${row}`);
+}
+
+function isWalkableAt(x, y) {
+  return isCellWalkable(Math.floor(x / CELL_W), Math.floor(y / CELL_H));
+}
+
+function updateGridOutputs() {
+  gridOutputs.classList.toggle('visible', selectMode);
+  gridOutputCount.textContent = `(${selectedCells.size})`;
+  gridOutputsList.innerHTML = '';
+
+  if (selectedCells.size === 0) {
+    gridOutputsList.innerHTML = '<span id="grid-outputs-empty">No cells selected</span>';
+  } else {
+    [...selectedCells]
+      .sort((a, b) => {
+        const [aCol, aRow] = a.split(',').map(Number);
+        const [bCol, bRow] = b.split(',').map(Number);
+        return aRow - bRow || aCol - bCol;
+      })
+      .forEach(key => {
+        const [col, row] = key.split(',');
+        const output = document.createElement('span');
+        output.className = 'grid-output';
+        output.textContent = `C${col}R${row}`;
+        gridOutputsList.appendChild(output);
+      });
+  }
+
+  
+}
+
+
+function updateCellSelection(endPoint) {
+  const startCell = cellFromRoomPoint(selectionStart);
+  const endCell = cellFromRoomPoint(endPoint);
+  const minCol = Math.min(startCell.col, endCell.col);
+  const maxCol = Math.max(startCell.col, endCell.col);
+  const minRow = Math.min(startCell.row, endCell.row);
+  const maxRow = Math.max(startCell.row, endCell.row);
+
+  selectedCells.clear();
+  for (let row = minRow; row <= maxRow; row++) {
+    for (let col = minCol; col <= maxCol; col++) {
+      selectedCells.add(`${col},${row}`);
+    }
+  }
+  updateGridOutputs();
+}
+
+selectCellsInput.addEventListener('change', () => {
+  selectMode = selectCellsInput.checked;
+  canvas.classList.toggle('cell-selecting', selectMode);
+  if (!selectMode) {
+    selectingCells = false;
+    selectionStart = null;
+  }
+  updateGridOutputs();
+});
+
+canvas.addEventListener('pointerdown', event => {
+  if (!selectMode || event.button !== 0) return;
+  event.preventDefault();
+  selectingCells = true;
+  selectionStart = roomPointFromEvent(event);
+  canvas.setPointerCapture(event.pointerId);
+  updateCellSelection(selectionStart);
+});
+
+canvas.addEventListener('pointermove', event => {
+  if (!selectMode || !selectingCells) return;
+  event.preventDefault();
+  updateCellSelection(roomPointFromEvent(event));
+});
+
+function finishCellSelection(event) {
+  if (!selectingCells) return;
+  event.preventDefault();
+  selectingCells = false;
+  selectionStart = null;
+  if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
+}
+
+canvas.addEventListener('pointerup', finishCellSelection);
+canvas.addEventListener('pointercancel', finishCellSelection);
+
+// ═══════════════════════════════════════════════════════════
+//  INPUT — KEYBOARD
+// ═══════════════════════════════════════════════════════════
+function isMenuOpen() {
+  const ov = document.getElementById('slots-overlay');
+  const mm = document.getElementById('main-menu');
+  const sn = document.getElementById('save-name-overlay');
+  return !!((ov && ov.classList.contains('open')) || (mm && mm.classList.contains('open')) || (sn && sn.classList.contains('open')));
+}
+window.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (isMenuOpen()) return;
+  if (computerOpen) {
+    if (e.code === 'Escape' || e.code === 'KeyE' || e.code === 'Space') closeComputer();
+    return;
+  }
+  // While a choice prompt is open, arrows move the cursor instead of the player
+  if (dialogOpen && choiceOptions) {
+    switch (e.code) {
+      case 'ArrowLeft': case 'KeyA': case 'ArrowUp':   case 'KeyW': moveChoice(-1); return;
+      case 'ArrowRight': case 'KeyD': case 'ArrowDown': case 'KeyS': moveChoice(1); return;
+      case 'KeyE': case 'Space': case 'Enter': pickChoice(); return;
+    }
+    return;
+  }
+  switch (e.code) {
+    case 'ArrowUp':    case 'KeyW': keys.up    = true; break;
+    case 'ArrowDown':  case 'KeyS': keys.down  = true; break;
+    case 'ArrowLeft':  case 'KeyA': keys.left  = true; break;
+    case 'ArrowRight': case 'KeyD': keys.right = true; break;
+    case 'KeyE': case 'Space':
+      if (dialogOpen) advanceDialog();
+      else tryInteract();
+      break;
+  }
+});
+window.addEventListener('keyup', e => {
+  switch (e.code) {
+    case 'ArrowUp':    case 'KeyW': keys.up    = false; break;
+    case 'ArrowDown':  case 'KeyS': keys.down  = false; break;
+    case 'ArrowLeft':  case 'KeyA': keys.left  = false; break;
+    case 'ArrowRight': case 'KeyD': keys.right = false; break;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  INPUT — MOBILE D-PAD
+// ═══════════════════════════════════════════════════════════
+function isMobile() {
+  return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+}
+
+function setupDpad() {
+  if (!isMobile()) return;
+  document.getElementById('dpad').style.display = 'block';
+  document.getElementById('btn-e').style.display = 'flex';
+
+  const map = {
+    'dpad-up':    'up',
+    'dpad-down':  'down',
+    'dpad-left':  'left',
+    'dpad-right': 'right',
+  };
+
+  Object.entries(map).forEach(([id, dir]) => {
+    const btn = document.getElementById(id);
+    btn.addEventListener('touchstart', e => { e.preventDefault(); keys[dir] = true;  btn.classList.add('pressed'); },    { passive: false });
+    btn.addEventListener('touchend',   e => { e.preventDefault(); keys[dir] = false; btn.classList.remove('pressed'); }, { passive: false });
+    btn.addEventListener('touchcancel',e => { e.preventDefault(); keys[dir] = false; btn.classList.remove('pressed'); }, { passive: false });
+  });
+
+  const btnE = document.getElementById('btn-e');
+  btnE.addEventListener('touchstart', e => { e.preventDefault(); if (dialogOpen) advanceDialog(); else tryInteract(); }, { passive: false });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INTERACTION
+// ═══════════════════════════════════════════════════════════
+function getPlayerCell() {
+  const col = Math.floor(player.x / CELL_W);
+  const row = Math.floor(player.y / CELL_H);
+  return { col: Math.max(0, Math.min(COLS-1, col)), row: Math.max(0, Math.min(ROWS-1, row)) };
+}
+
+let autoWalk = null;
+
+function tryInteract() {
+  const { col, row } = getPlayerCell();
+  if (!activeInteract) return;
+  if (autoWalk) return;
+  const node = resolveNode(activeInteract.def);
+  if (!node) return;
+  if (node.goto && !(node.lines && node.lines.length)) {
+    applyEffects(node);
+    changeScene(node.goto, node.at);
+    return;
+  }
+  // Walk the player down to the bottom of their cell so they line up
+  // with NPC sprites (which are anchored at their cell's base).
+  const targetY = (row + 1) * CELL_H;
+  if (Math.abs(targetY - player.y) > 1) {
+    keys.up = keys.down = keys.left = keys.right = false;
+    autoWalk = { y: targetY, interact: node };
+    return;
+  }
+  openDialog(node);
+}
+
+
+
+// ── Scene switching ───────────────────────────────────────
+let sceneTransitioning = false;
+const fadeEl = document.getElementById('scene-fade');
+
+function parseCell(str) {
+  const m = /C(\d+)R(\d+)/.exec(String(str || ''));
+  return m ? { col: +m[1], row: +m[2] } : null;
+}
+
+function changeScene(name, at) {
+  if (sceneTransitioning) return;
+  if (!SCENES[name]) return;
+  sceneTransitioning = true;
+  closeDialog();
+  keys.up = keys.down = keys.left = keys.right = false;
+  if (fadeEl) fadeEl.classList.add('active');
+  setTimeout(() => {
+    applyScene(name, at);
+    if (fadeEl) fadeEl.classList.remove('active');
+    setTimeout(() => { sceneTransitioning = false; }, 260);
+  }, 270);
+}
+
+function applyScene(name, at) {
+  const next = SCENES[name];
+  if (!next) return;
+  closeDialog();
+  CURRENT_SCENE = name;
+  scene = next;
+  WALKABLE = parseCells(scene.walkable);
+  OCCUPIED = parseOccupied(scene);
+  INTERACTS = buildInteracts(scene);
+  activeInteract = null;
+  autoWalk = null;
+  player.dir = 'idle';
+  player.moving = false;
+  player.bobTime = 0;
+  keys.up = keys.down = keys.left = keys.right = false;
+  if (!backgrounds[name]) {
+    const img = new Image();
+    img.src = scene.background;
+    backgrounds[name] = img;
+  }
+  sprites.room = backgrounds[name];
+  applyRoomMetrics(sprites.room);
+  preloadNeighbors(name);
+  const cell = parseCell(at) || scene.spawn;
+  player.x = (cell.col + 0.5) * CELL_W;
+  player.y = (cell.row + 0.5) * CELL_H;
+  updateDevLabel();
+  updateObjective();
+  runSceneEnter();
+}
+
+// Cutscene that plays when the player walks into a scene in a given state.
+let suppressEnter = false;
+function runSceneEnter() {
+  if (suppressEnter) return;
+  const list = scene.enter || [];
+  for (let i = 0; i < list.length; i++) {
+    const node = list[i];
+    if (node.when && !node.when(FLAGS)) continue;
+    setTimeout(() => openDialog(node), 320);
+    return;
+  }
+}
+
+function showChapterEnd() {
+  closeDialog();
+  const obj = document.getElementById('objective');
+  if (obj) obj.style.display = 'none';
+  const ctrls = document.getElementById('scene-controls');
+  if (ctrls) ctrls.style.display = 'none';
+  const el = document.getElementById('chapter-end');
+  if (el) el.classList.add('open');
+}
+
+// ── RPGMaker-style dialogue window ────────────────────────
+const dialogEl     = document.getElementById('dialog');
+const dialogNameEl = document.getElementById('dialog-name');
+const dialogTextEl = document.getElementById('dialog-text');
+
+const TYPE_SPEED = 28; // characters per second-ish (ms per char below)
+const MS_PER_CHAR = 1000 / TYPE_SPEED * 0.55;
+
+let dialogQueue = [];
+let dialogIndex = 0;
+let dialogTyping = false;
+let typeTimer = null;
+let currentSpeaker = null;
+let pendingTransition = null;
+
+function positionDialog() {
+  // Anchor the window inside the stage (same box in every scene) so it reads
+  // as part of the game canvas, like an RPGMaker message window.
+  const roomLeft   = stageLeft;
+  const roomTop    = stageTop;
+  const roomWidth  = stageW;
+  const roomHeight = stageH;
+  const margin     = Math.max(10, roomWidth * 0.025);
+
+  dialogEl.style.left   = (roomLeft + margin) + 'px';
+  dialogEl.style.width  = (roomWidth - margin * 2) + 'px';
+  dialogEl.style.height = Math.max(160, roomHeight * 0.38) + 'px';
+  dialogEl.style.top    = (roomTop + roomHeight - margin - Math.max(160, roomHeight * 0.38)) + 'px';
+
+  // Scale typography with the room so it fills the dialog window.
+  const fs = Math.max(18, Math.min(52, roomWidth * 0.026));
+  dialogTextEl.style.fontSize = fs + 'px';
+  dialogNameEl.style.fontSize = Math.max(13, fs * 0.72) + 'px';
+  for (const choice of document.querySelectorAll('.dialog-choice')) {
+    choice.style.fontSize = Math.max(16, fs * 0.78) + 'px';
+  }
+}
+
+function renderSpeaker(key) {
+  const char = CHARACTERS[key];
+  if (char && !char.hide_name) {
+    dialogEl.classList.add('has-name');
+    dialogNameEl.textContent = char.name;
+    dialogNameEl.style.color = char.dialogue_color;
+    dialogTextEl.style.color = char.dialogue_color;
+  } else {
+    dialogEl.classList.remove('has-name');
+    dialogNameEl.textContent = '';
+    dialogTextEl.style.color = (char && char.dialogue_color) || '#f2f4ff';
+  }
+}
+
+// ── Dialogue portraits: July on the left, June on the right ──
+const PORTRAIT_SIDE = { july: 'left', june: 'right' };
+const portraitEls = {
+  left:  document.getElementById('portrait-left'),
+  right: document.getElementById('portrait-right'),
+};
+let portraitState = { left: null, right: null };
+
+function resetPortraits() {
+  portraitState = { left: null, right: null };
+  Object.values(portraitEls).forEach(el => {
+    if (!el) return;
+    el.classList.remove('show', 'dim');
+    el.removeAttribute('src');
+  });
+}
+
+function renderPortrait(speaker, sprite) {
+  const side = PORTRAIT_SIDE[speaker];
+  if (side && sprite) {
+    const el = portraitEls[side];
+    if (el) {
+      if (portraitState[side] !== sprite) {
+        el.src = 'sprites/' + sprite + '.png';
+        portraitState[side] = sprite;
+      }
+      el.classList.add('show');
+    }
+  }
+  // Highlight the active speaker, dim the other one.
+  ['left', 'right'].forEach(s => {
+    const el = portraitEls[s];
+    if (!el || !portraitState[s]) return;
+    el.classList.toggle('dim', s !== side);
+  });
+}
+
+function typeLine(text, onDone) {
+  clearTimeout(typeTimer);
+  dialogTyping = true;
+  dialogEl.classList.remove('ready');
+  dialogTextEl.textContent = '';
+  let i = 0;
+  const step = () => {
+    if (i >= text.length) {
+      dialogTyping = false;
+      dialogEl.classList.add('ready');
+      if (onDone) onDone();
+      return;
+    }
+    dialogTextEl.textContent += text[i++];
+    typeTimer = setTimeout(step, MS_PER_CHAR);
+  };
+  step();
+}
+
+// ── Choice prompts (Yes / No) ─────────────────────────────
+const dialogChoicesEl = document.getElementById('dialog-choices');
+let choiceOptions = null;
+let choiceIndex = 0;
+
+function showChoices(options) {
+  choiceOptions = options;
+  choiceIndex = 0;
+  dialogChoicesEl.innerHTML = '';
+  options.forEach((opt, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dialog-choice' + (i === 0 ? ' selected' : '');
+    btn.textContent = opt.label;
+    btn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      choiceIndex = i;
+      pickChoice();
+    });
+    dialogChoicesEl.appendChild(btn);
+  });
+  dialogEl.classList.add('has-choices');
+  highlightChoice();
+}
+
+function highlightChoice() {
+  Array.from(dialogChoicesEl.children).forEach((el, i) => {
+    el.classList.toggle('selected', i === choiceIndex);
+  });
+}
+
+function moveChoice(delta) {
+  if (!choiceOptions) return;
+  choiceIndex = (choiceIndex + delta + choiceOptions.length) % choiceOptions.length;
+  highlightChoice();
+}
+
+var dialogRest = [];
+function pickChoice() {
+  if (!choiceOptions) return;
+  const opt = choiceOptions[choiceIndex];
+  const carry = pendingTransition;
+  const rest = dialogRest.slice();
+  dialogRest = [];
+  clearChoices();
+  closeDialog();
+  if (!opt) return;
+  applyEffects(opt);
+  if (opt.action === 'computer') openComputer();
+  else if ((opt.lines && opt.lines.length) || rest.length)
+    openDialog({ lines: [...(opt.lines || []), ...rest], goto: opt.goto, at: opt.at });
+  else if (opt.goto) changeScene(opt.goto, opt.at);
+  else if (carry) changeScene(carry.goto, carry.at);
+}
+
+// ── Computer screen view ──────────────────────────────────
+var computerViewEl = document.getElementById('computer-view');
+var computerExitEl = document.getElementById('computer-exit');
+var computerOpen = false;
+
+function positionComputer() {
+  var computerViewEl = document.getElementById('computer-view');
+  if (!computerViewEl) return;
+  computerViewEl.style.left   = stageLeft + 'px';
+  computerViewEl.style.top    = stageTop + 'px';
+  computerViewEl.style.width  = stageW + 'px';
+  computerViewEl.style.height = stageH + 'px';
+}
+
+function renderInbox() {
+  const box = document.getElementById('computer-inbox');
+  if (!box) return;
+  box.innerHTML = '';
+  window.STORY.computer(FLAGS).forEach(mail => {
+    const wrap = document.createElement('div');
+    wrap.className = 'mail';
+    const f = document.createElement('div'); f.className = 'mail-from'; f.textContent = mail.from;
+    const t = document.createElement('div'); t.className = 'mail-subj'; t.textContent = mail.subj;
+    const b = document.createElement('div'); b.className = 'mail-body'; b.textContent = mail.body;
+    wrap.appendChild(f); wrap.appendChild(t); wrap.appendChild(b);
+    box.appendChild(wrap);
+  });
+}
+
+function openComputer() {
+  renderInbox();
+  closeDialog();
+  keys.up = keys.down = keys.left = keys.right = false;
+  player.dir = 'idle';
+  player.moving = false;
+  computerOpen = true;
+  positionComputer();
+  computerViewEl.classList.add('open');
+}
+
+function closeComputer() {
+  computerOpen = false;
+  computerViewEl.classList.remove('open');
+}
+
+if (computerExitEl) {
+  computerExitEl.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeComputer();
+  });
+}
+
+function clearChoices() {
+  choiceOptions = null;
+  choiceIndex = 0;
+  dialogChoicesEl.innerHTML = '';
+  dialogEl.classList.remove('has-choices');
+}
+
+function showDialogPage(index) {
+  const page = dialogQueue[index];
+  if (!page) { closeDialog(); return; }
+  applyEffects(page);
+  if (page.end) { showChapterEnd(); return; }
+  if (page.speaker) currentSpeaker = page.speaker;
+  renderSpeaker(currentSpeaker);
+  renderPortrait(currentSpeaker, page.sprite);
+  positionDialog();
+  clearChoices();
+  dialogRest = (page.choices && page.choices.length) ? dialogQueue.slice(index + 1) : [];
+  typeLine(page.text || '', () => {
+    if (page.choices && page.choices.length) showChoices(page.choices);
+  });
+}
+
+function openDialog(data) {
+  if (!data) return;
+  const lines = data.lines || [];
+  applyEffects(data);
+  if (!lines.length) {
+    if (data.goto) changeScene(data.goto, data.at);
+    return;
+  }
+  pendingTransition = (data.goto) ? { goto: data.goto, at: data.at } : null;
+  dialogQueue = lines;
+  dialogIndex = 0;
+  currentSpeaker = null;
+  resetPortraits();
+  dialogOpen = true;
+  dialogEl.classList.add('open');
+  showDialogPage(0);
+}
+
+// E / Space / click: finish typing, then advance, then close.
+function advanceDialog() {
+  if (!dialogOpen) return;
+  const page = dialogQueue[dialogIndex];
+  if (dialogTyping) {
+    clearTimeout(typeTimer);
+    dialogTyping = false;
+    dialogTextEl.textContent = (page && page.text) || '';
+    dialogEl.classList.add('ready');
+    if (page && page.choices && page.choices.length) showChoices(page.choices);
+    return;
+  }
+  if (choiceOptions) { pickChoice(); return; }
+  dialogIndex++;
+  if (dialogIndex >= dialogQueue.length) {
+    const t = pendingTransition;
+    closeDialog();
+    if (t) changeScene(t.goto, t.at);
+  }
+  else showDialogPage(dialogIndex);
+}
+
+function closeDialog() {
+  clearTimeout(typeTimer);
+  dialogTyping = false;
+  dialogOpen = false;
+  dialogQueue = [];
+  dialogIndex = 0;
+  currentSpeaker = null;
+  pendingTransition = null;
+  clearChoices();
+  resetPortraits();
+  dialogEl.classList.remove('open', 'ready', 'has-name');
+}
+
+dialogEl.addEventListener('pointerdown', e => { e.preventDefault(); advanceDialog(); });
+
+// ═══════════════════════════════════════════════════════════
+//  UPDATE
+// ═══════════════════════════════════════════════════════════
+function update(dt) {
+  // Auto-walk into alignment before an interaction dialog opens
+  if (autoWalk) {
+    const diff = autoWalk.y - player.y;
+    const step = PLAYER_SPEED * dt;
+    if (Math.abs(diff) <= step) {
+      player.y = autoWalk.y;
+      player.moving = false;
+      player.dir = 'idle';
+      player.bobTime = 0;
+      const pending = autoWalk.interact;
+      autoWalk = null;
+      if (pending) openDialog(pending);
+      return;
+    }
+    player.y += Math.sign(diff) * step;
+    player.moving = true;
+    player.bobTime += dt;
+    player.dir = diff < 0 ? 'up' : 'idle';
+    return;
+  }
+  if (dialogOpen) return;
+  if (slotsOverlay.classList.contains('open')) return;
+
+  let dx = 0, dy = 0;
+  if (keys.left)  dx -= 1;
+  if (keys.right) dx += 1;
+  if (keys.up)    dy -= 1;
+  if (keys.down)  dy += 1;
+
+  // Normalise diagonal
+  if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
+
+  const moving = dx !== 0 || dy !== 0;
+
+
+  if (moving) {
+    let nextX = player.x;
+    let nextY = player.y;
+
+    if (dx !== 0) {
+      const tryX = player.x + dx * PLAYER_SPEED * dt;
+      if (isWalkableAt(tryX, player.y)) nextX = tryX;
+    }
+    if (dy !== 0) {
+      const tryY = player.y + dy * PLAYER_SPEED * dt;
+      if (isWalkableAt(nextX, tryY)) nextY = tryY;
+    }
+
+    player.x = nextX;
+    player.y = nextY;
+    player.bobTime += dt;
+
+    // Direction — prefer horizontal
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      player.dir = dx < 0 ? 'left' : 'right';
+    } else {
+      player.dir = dy < 0 ? 'up' : 'idle';  // 'idle' = facing down/toward camera
+    }
+  } else {
+    player.dir = 'idle';
+    player.bobTime = 0;
+  }
+  player.moving = moving;
+
+  // Clamp to room bounds
+  player.x = Math.max(CHAR_H * 0.3, Math.min(ROOM_W - CHAR_H * 0.3, player.x));
+  player.y = Math.max(CHAR_H * 0.2, Math.min(ROOM_H - CHAR_H * 0.1, player.y));
+
+  // Update interact hint
+  updateInteractHint();
+}
+
+function updateDevLabel() {
+  const { col, row } = getPlayerCell();
+  document.getElementById('scene-name').textContent = CURRENT_SCENE;
+  document.getElementById('cell-pos').textContent = `C${col}R${row}`;
+}
+
+function updateInteractHint() {
+  const { col, row } = getPlayerCell();
+
+  // Update dev label with current scene and cell position
+  updateDevLabel();
+
+  activeInteract = INTERACTS.find(it => it.cells.has(`${col},${row}`)) || null;
+
+  const hint = document.getElementById('interact-hint');
+  if (activeInteract) {
+    // Position hint above player in screen coords
+    const sx = offsetX + player.x * scale;
+    const sy = offsetY + player.y * scale;
+    hint.style.left = sx + 'px';
+    hint.style.top  = (sy - CHAR_H * scale * 0.8) + 'px';
+    hint.style.display = 'block';
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════════
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+  ctx.scale(scale, scale);
+
+  // ── Background room ── room space matches the image's own resolution
+  ctx.imageSmoothingEnabled = false;
+  if (sprites.room && sprites.room.complete && sprites.room.naturalWidth > 0) {
+    ctx.drawImage(sprites.room, 0, 0, ROOM_W, ROOM_H);
+  } else {
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, ROOM_W, ROOM_H);
+  }
+
+  // ── Dev grid overlay ──
+  if (DEV_MODE) drawGrid();
+
+  // ── Player ──
+  drawProps();
+  drawPlayer();
+
+  // ── Interact icon ──
+  drawInteractIcon();
+
+  ctx.restore();
+}
+
+function drawInteractIcon() {
+  if (!activeInteract || dialogOpen) return;
+  const img = sprites.interact;
+  if (!img || !img.complete || img.naturalWidth === 0) return;
+
+  const size = Math.min(CELL_W, CELL_H) * 0.8;
+  const cx = (activeInteract.iconCol + 0.5) * CELL_W;
+  const cy = (activeInteract.iconRow + 0.5) * CELL_H;
+  ctx.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+}
+
+function drawGrid() {
+  ctx.save();
+
+  // Very subtle fill per cell (checkerboard-ish)
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const x = col * CELL_W;
+      const y = row * CELL_H;
+      const key = `${col},${row}`;
+
+      // Dev-selected cells
+      if (selectedCells.has(key)) {
+        ctx.fillStyle = 'rgba(70, 205, 255, 0.28)';
+        ctx.fillRect(x, y, CELL_W, CELL_H);
+      }
+
+    }
+  }
+
+  // Grid lines — dashed, very subtle
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 8]);
+
+  // Vertical lines
+  for (let col = 0; col <= COLS; col++) {
+    const x = col * CELL_W;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, ROOM_H);
+    ctx.stroke();
+  }
+
+  // Horizontal lines
+  for (let row = 0; row <= ROWS; row++) {
+    const y = row * CELL_H;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(ROOM_W, y);
+    ctx.stroke();
+  }
+
+  ctx.setLineDash([]);
+
+  // Strong outline around selected cells so they remain visible over room art.
+  if (selectedCells.size > 0) {
+    ctx.strokeStyle = 'rgba(105,225,255,0.95)';
+    ctx.lineWidth = 3;
+    selectedCells.forEach(key => {
+      const [col, row] = key.split(',').map(Number);
+      ctx.strokeRect(col * CELL_W + 2, row * CELL_H + 2, CELL_W - 4, CELL_H - 4);
+    });
+  }
+
+  ctx.restore();
+}
+
+// Static scene props (characters/objects placed on a cell).
+function drawProps() {
+  if (computerOpen) return;
+  (sceneProps(scene)).forEach(prop => {
+    const img = sprites[prop.sprite];
+    if (!img || !img.complete || img.naturalWidth === 0) return;
+    const m = /^C(\d+)R(\d+)$/.exec(prop.cell || '');
+    if (!m) return;
+    const col = +m[1], row = +m[2];
+    const h = CHAR_H * (prop.scale || 1);
+    const w = (img.naturalWidth / img.naturalHeight) * h;
+    const x = (col + 0.5) * CELL_W;
+    const y = (row + 1) * CELL_H;
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 2, w * 0.38, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.drawImage(img, x - w / 2, y - h, w, h);
+  });
+}
+
+function drawPlayer() {
+  if (computerOpen) return;
+  const sprKey = player.dir;
+  const img = sprites[sprKey];
+  if (!img || !img.complete || img.naturalWidth === 0) return;
+
+  // Aspect-correct size
+  const charH = CHAR_H;
+  const charW = (img.naturalWidth / img.naturalHeight) * charH;
+
+  // Bob offset while moving
+  const bobY = player.moving
+    ? Math.sin(player.bobTime * BOB_FREQ * Math.PI * 2) * BOB_AMP
+    : 0;
+
+  // Draw centered on player position (feet at player.y)
+  const drawX = player.x - charW / 2;
+  const drawY = player.y - charH + bobY;
+
+  // Shadow
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(player.x, player.y + 2, charW * 0.38, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Sprite
+  ctx.drawImage(img, drawX, drawY, charW, charH);
+
+  // Debug: player cell highlight
+  if (!DEV_MODE) return;
+  const { col, row } = getPlayerCell();
+  ctx.save();
+  ctx.strokeStyle = 'rgba(100,220,255,0.5)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(col * CELL_W + 1, row * CELL_H + 1, CELL_W - 2, CELL_H - 2);
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+
+// ═══════════════════════════════════════════════════════════
+//  SAVE / LOAD SYSTEM
+// ═══════════════════════════════════════════════════════════
+const SAVE_KEY = 'quest-rpg-saves-v1';
+const TOTAL_SLOTS = 60;
+const SLOTS_PER_PAGE = 6;
+const TOTAL_PAGES = TOTAL_SLOTS / SLOTS_PER_PAGE;
+
+let slotsMode = 'save';   // 'save' | 'load'
+let slotsPage = 0;
+
+const slotsOverlay   = document.getElementById('slots-overlay');
+const slotsGrid      = document.getElementById('slots-grid');
+const slotsTitle     = document.getElementById('slots-title');
+const slotsPageLabel = document.getElementById('slots-page-label');
+const slotsPrev      = document.getElementById('slots-prev');
+const slotsNext      = document.getElementById('slots-next');
+const slotsToast     = document.getElementById('slots-toast');
+
+let saveNameMode = 'save'; // 'save' | 'rename'
+let saveNameIndex = -1;
+const saveNameOverlay = document.getElementById('save-name-overlay');
+const saveNameInput   = document.getElementById('save-name-input');
+const saveNameTitle   = document.getElementById('save-name-title');
+
+function readSaves() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    const data = raw ? JSON.parse(raw) : null;
+    return (data && typeof data === 'object') ? data : {};
+  } catch (err) {
+    return {};
+  }
+}
+
+function writeSaves(saves) {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(saves));
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function showToast(message) {
+  slotsToast.textContent = message || '';
+}
+
+function captureState() {
+  return {
+    scene: CURRENT_SCENE,
+    x: player.x,
+    y: player.y,
+    dir: player.dir,
+    flags: JSON.parse(JSON.stringify(FLAGS)),
+    objective: OBJECTIVE_OVERRIDE,
+    savedAt: Date.now(),
+  };
+}
+
+function applyState(state) {
+  if (!state) return;
+  if (state.flags) { FLAGS = Object.assign({}, window.STORY.initialFlags, state.flags); deriveFlags(); }
+  OBJECTIVE_OVERRIDE = (typeof state.objective === 'string') ? state.objective : null;
+  if (state.scene && SCENES[state.scene]) {
+    suppressEnter = true;
+    applyScene(state.scene);
+    suppressEnter = false;
+  }
+  updateObjective();
+  player.x = state.x;
+  player.y = state.y;
+  player.dir = state.dir || 'idle';
+  player.moving = false;
+  player.bobTime = 0;
+  keys.up = keys.down = keys.left = keys.right = false;
+  closeDialog();
+}
+
+function cellLabel(state) {
+  const col = Math.max(0, Math.min(COLS - 1, Math.floor(state.x / CELL_W)));
+  const row = Math.max(0, Math.min(ROWS - 1, Math.floor(state.y / CELL_H)));
+  return `C${col}R${row}`;
+}
+
+function renderSlots() {
+  slotsTitle.textContent = slotsMode === 'save' ? 'SAVE GAME' : 'LOAD GAME';
+  slotsPageLabel.textContent = `Page ${slotsPage + 1} / ${TOTAL_PAGES}`;
+  slotsPrev.disabled = slotsPage === 0;
+  slotsNext.disabled = slotsPage === TOTAL_PAGES - 1;
+
+  const saves = readSaves();
+  slotsGrid.innerHTML = '';
+
+  for (let i = 0; i < SLOTS_PER_PAGE; i++) {
+    const index = slotsPage * SLOTS_PER_PAGE + i;
+    const data = saves[index];
+    const slot = document.createElement('div');
+    slot.className = 'slot' + (data ? ' filled' : '');
+    if (!data && slotsMode === 'load') slot.classList.add('disabled');
+
+    const head = document.createElement('div');
+    head.className = 'slot-index';
+    head.textContent = `SLOT ${index + 1}`;
+    slot.appendChild(head);
+
+    if (data) {
+      const name = document.createElement('div');
+      name.className = 'slot-name';
+      name.textContent = data.name || `Save ${index + 1}`;
+      slot.appendChild(name);
+
+      const meta = document.createElement('div');
+      meta.className = 'slot-meta';
+      meta.textContent = `${data.scene} · ${cellLabel(data)}\n${new Date(data.savedAt).toLocaleString()}`;
+      meta.style.whiteSpace = 'pre-line';
+      slot.appendChild(meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'slot-actions';
+
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'slot-action';
+      renameBtn.type = 'button';
+      renameBtn.textContent = 'RENAME';
+      renameBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        openSaveNamePrompt('rename', index, data.name || '');
+      });
+      actions.appendChild(renameBtn);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'slot-action';
+      deleteBtn.type = 'button';
+      deleteBtn.textContent = 'DELETE';
+      deleteBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!confirm(`Delete slot ${index + 1}?`)) return;
+        const all = readSaves();
+        delete all[index];
+        writeSaves(all);
+        renderSlots();
+        showToast(`Slot ${index + 1} deleted.`);
+      });
+      actions.appendChild(deleteBtn);
+
+      slot.appendChild(actions);
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'slot-empty';
+      empty.textContent = slotsMode === 'save' ? '— Empty —' : '— No data —';
+      slot.appendChild(empty);
+    }
+
+    slot.addEventListener('click', () => {
+      if (slotsMode === 'save') {
+        if (data && !confirm(`Overwrite slot ${index + 1}?`)) return;
+        const suggested = data && data.name ? data.name : '';
+        openSaveNamePrompt('save', index, suggested);
+      } else {
+        if (!data) return;
+        applyState(data);
+        closeSlots();
+        if (typeof startPlaying === 'function' && mainMenu.classList.contains('open')) startPlaying();
+      }
+    });
+
+    slotsGrid.appendChild(slot);
+  }
+}
+
+function openSlots(mode) {
+  slotsMode = mode;
+  slotsPage = 0;
+  showToast('');
+  slotsOverlay.classList.add('open');
+  renderSlots();
+}
+
+function closeSlots() {
+  slotsOverlay.classList.remove('open');
+}
+
+function openSaveNamePrompt(mode, index, suggestedName) {
+  saveNameMode = mode;
+  saveNameIndex = index;
+  saveNameTitle.textContent = mode === 'rename' ? 'RENAME SAVE' : 'NAME THIS SAVE';
+  saveNameInput.value = suggestedName || '';
+  saveNameOverlay.classList.add('open');
+  setTimeout(() => saveNameInput.focus(), 50);
+}
+
+function closeSaveNamePrompt() {
+  saveNameOverlay.classList.remove('open');
+  saveNameInput.value = '';
+  saveNameIndex = -1;
+}
+
+function confirmSaveName() {
+  if (saveNameIndex < 0) return;
+  const name = saveNameInput.value.trim();
+  const all = readSaves();
+  if (saveNameMode === 'rename') {
+    if (!all[saveNameIndex]) return closeSaveNamePrompt();
+    all[saveNameIndex].name = name;
+    writeSaves(all);
+    renderSlots();
+    showToast(`Slot ${saveNameIndex + 1} renamed.`);
+  } else {
+    all[saveNameIndex] = Object.assign(captureState(), { name: name });
+    if (writeSaves(all)) {
+      renderSlots();
+      showToast(`Game saved to slot ${saveNameIndex + 1}.`);
+    } else {
+      showToast('Could not save — storage unavailable.');
+    }
+  }
+  closeSaveNamePrompt();
+}
+
+document.getElementById('btn-save').addEventListener('click', () => openSlots('save'));
+document.getElementById('btn-load').addEventListener('click', () => openSlots('load'));
+document.getElementById('slots-close').addEventListener('click', closeSlots);
+slotsPrev.addEventListener('click', () => { if (slotsPage > 0) { slotsPage--; renderSlots(); } });
+slotsNext.addEventListener('click', () => { if (slotsPage < TOTAL_PAGES - 1) { slotsPage++; renderSlots(); } });
+slotsOverlay.addEventListener('click', e => { if (e.target === slotsOverlay) closeSlots(); });
+window.addEventListener('keydown', e => {
+  if (e.code === 'Escape' && slotsOverlay.classList.contains('open') && !saveNameOverlay.classList.contains('open')) closeSlots();
+});
+
+// In-game save-name prompt handlers
+document.getElementById('save-name-confirm').addEventListener('click', confirmSaveName);
+document.getElementById('save-name-cancel').addEventListener('click', closeSaveNamePrompt);
+saveNameInput.addEventListener('keydown', e => {
+  if (e.code === 'Enter') { e.preventDefault(); confirmSaveName(); }
+  else if (e.code === 'Escape') { e.preventDefault(); closeSaveNamePrompt(); }
+});
+saveNameOverlay.addEventListener('click', e => { if (e.target === saveNameOverlay) closeSaveNamePrompt(); });
+
+
+// ═══════════════════════════════════════════════════════════
+//  MAIN MENU
+// ═══════════════════════════════════════════════════════════
+const mainMenu = document.getElementById('main-menu');
+const menuMain = document.getElementById('menu-main');
+const settingsPanel = document.getElementById('settings-panel');
+
+function latestSave() {
+  const saves = readSaves();
+  let best = null;
+  Object.keys(saves).forEach(k => {
+    const s = saves[k];
+    if (s && (!best || (s.savedAt || 0) > (best.savedAt || 0))) best = s;
+  });
+  return best;
+}
+
+function setGameChromeVisible(v) {
+  ['scene-controls', 'objective'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.visibility = v ? 'visible' : 'hidden';
+  });
+}
+
+function openMainMenu() {
+  menuMain.classList.remove('hidden');
+  settingsPanel.classList.remove('open');
+  const cont = document.getElementById('menu-continue');
+  cont.disabled = !latestSave();
+  mainMenu.classList.add('open');
+  setGameChromeVisible(false);
+  menuIndex = cont.disabled ? 0 : 1;
+  paintMenuSelection();
+}
+
+function startPlaying() {
+  mainMenu.classList.remove('open');
+  setGameChromeVisible(true);
+  keys.up = keys.down = keys.left = keys.right = false;
+}
+
+document.getElementById('menu-new').addEventListener('click', () => {
+  resetStory();
+  suppressEnter = true;
+  applyScene(window.STORY.startScene);
+  suppressEnter = false;
+  placeAtSpawn();
+  player.dir = 'idle';
+  player.moving = false;
+  closeDialog();
+  startPlaying();
+  runSceneEnter();
+});
+
+document.getElementById('menu-continue').addEventListener('click', () => {
+  const s = latestSave();
+  if (!s) return;
+  applyState(s);
+  startPlaying();
+});
+
+document.getElementById('menu-load').addEventListener('click', () => {
+  openSlots('load');
+});
+
+document.getElementById('menu-settings').addEventListener('click', () => {
+  menuMain.classList.add('hidden');
+  settingsPanel.classList.add('open');
+  menuIndex = 0;
+  paintMenuSelection();
+});
+
+document.getElementById('menu-back').addEventListener('click', () => {
+  settingsPanel.classList.remove('open');
+  menuMain.classList.remove('hidden');
+  menuIndex = 3;
+  paintMenuSelection();
+});
+
+document.getElementById('set-touch').addEventListener('change', e => {
+  const on = e.target.checked;
+  ['dpad', 'btn-e'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = on ? 'grid' : '';
+    if (el && id === 'btn-e' && on) el.style.display = 'flex';
+  });
+});
+
+document.getElementById('set-hint').addEventListener('change', e => {
+  const el = document.getElementById('interact-hint');
+  if (el) el.style.opacity = e.target.checked ? '' : '0';
+  window.HINTS_ENABLED = e.target.checked;
+});
+
+
+// ── menu selection (keyboard + hover) ──
+function menuButtons() {
+  const panel = settingsPanel.classList.contains('open') ? settingsPanel : menuMain;
+  return Array.from(panel.querySelectorAll('.menu-btn'));
+}
+let menuIndex = 0;
+function paintMenuSelection() {
+  const btns = menuButtons();
+  if (!btns.length) return;
+  menuIndex = Math.max(0, Math.min(btns.length - 1, menuIndex));
+  btns.forEach((b, i) => b.classList.toggle('selected', i === menuIndex));
+}
+function moveMenu(delta) {
+  const btns = menuButtons();
+  if (!btns.length) return;
+  let i = menuIndex;
+  for (let n = 0; n < btns.length; n++) {
+    i = (i + delta + btns.length) % btns.length;
+    if (!btns[i].disabled) break;
+  }
+  menuIndex = i;
+  paintMenuSelection();
+}
+document.querySelectorAll('#main-menu .menu-btn').forEach(btn => {
+  btn.addEventListener('mouseenter', () => {
+    const btns = menuButtons();
+    const i = btns.indexOf(btn);
+    if (i >= 0 && !btn.disabled) { menuIndex = i; paintMenuSelection(); }
+  });
+});
+window.addEventListener('keydown', e => {
+  if (!mainMenu.classList.contains('open')) return;
+  if (slotsOverlay.classList.contains('open')) return;
+  if (e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); moveMenu(-1); }
+  else if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); moveMenu(1); }
+  else if (e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyE') {
+    e.preventDefault();
+    const btn = menuButtons()[menuIndex];
+    if (btn && !btn.disabled) btn.click();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  GAME LOOP
+// ═══════════════════════════════════════════════════════════
+function loop(timestamp) {
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05); // cap at 50ms
+  lastTime = timestamp;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function startGame() {
+  const base = backgrounds[CURRENT_SCENE];
+  if (base && base.naturalWidth) { STAGE_W = base.naturalWidth; STAGE_H = base.naturalHeight; }
+  applyRoomMetrics(sprites.room);
+  placeAtSpawn();
+  deriveFlags();
+  updateObjective();
+  const overlay = document.getElementById('loading-screen');
+  if (overlay) overlay.classList.add('hidden');
+  openMainMenu();
+  setupDpad();
+  preloadNeighbors(CURRENT_SCENE);
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+}
+
+// Kick off if images somehow all cached instantly
+if (assetsLoaded === TOTAL_ASSETS) startGame();
+</script>
+</body>
+</html>
+
+<script>
+(function () {
+  const ce = document.getElementById('chapter-end');
+  const note = document.getElementById('ce-note');
+  const btn = document.getElementById('ce-close');
+  if (!ce || !btn) return;
+  btn.addEventListener('click', () => {
+    ce.classList.remove('open');
+    const ctrls = document.getElementById('scene-controls');
+    if (ctrls) ctrls.style.display = '';
+    if (typeof openMainMenu === 'function') openMainMenu();
+  });
+  const obs = new MutationObserver(() => {
+    if (!ce.classList.contains('open')) return;
+    const t = (typeof FLAGS !== 'undefined' && FLAGS.trust) || 0;
+    note.textContent = t > 0
+      ? "She asked you for tomorrow. In this house, tomorrow is a thing people promise and then survive instead."
+      : "Nobody in this flat has ever said the thing out loud. Chapter 2 starts the morning after the thing that finally gets said.";
+  });
+  obs.observe(ce, { attributes: true, attributeFilter: ['class'] });
+})();
+</script>
