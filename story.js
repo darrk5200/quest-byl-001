@@ -16,7 +16,7 @@
     saw_pot: false,
     checked_closet: false,
 
-    // Act 2 — stairwell
+    // Act 2 — hallway
     met_june: false,
     covered: false,
     refused: false,
@@ -52,7 +52,16 @@
     // Act 6 — balcony
     balcony_called: false,
     chapter_done: false,
+
+    // Episode 01 — added optional beats
+    saw_car: false,
+    read_notices: false,
+    saw_calendar: false,
+    used_payphone: false,
+    found_ticket: false,
+    saw_sheet_knot: false,
   };
+
 
   const clues = (F) => (F.clue_phone ? 1 : 0) + (F.clue_cash ? 1 : 0) + (F.clue_slip ? 1 : 0);
 
@@ -71,8 +80,8 @@
     wake: 'Get up. Find out why the power is out.',
     email: 'Read the school email on your computer.',
     money: 'Find the rent envelope under your bed.',
-    leave: 'Leave your room. The landing is up the stairs.',
-    june_stairs: 'Talk to June on the landing.',
+    leave: 'Leave your room. Step out into the hallway.',
+    june_stairs: 'Talk to June in the hallway.',
     kitchen: 'Get to the kitchen — quietly. Dad is asleep.',
     chores: 'Kill the noise before Dad wakes: TV, dishes, bottles.',
     breaker: 'Check the fuse box by the fridge.',
@@ -259,7 +268,7 @@
         ],
       },
 
-      // ── Door → stairwell ──
+      // ── Door → hallway ──
       {
         cells: "C17R4C18R4C19R4",
         icon: "C18R2",
@@ -276,47 +285,40 @@
               { speaker: 'july', sprite: 'july_idle', text: "Take the rent envelope first. Never leave money in a house like this." },
             ],
           },
-          { goto: 'scene-2', at: 'C5R15' },
+          { goto: 'scene-2', at: 'C4R16' },
         ],
       },
     ],
   };
 
   // ═══════════════════════════════════════════════════════
-  //  SCENE 2 — THE STAIRWELL / LANDING
+  //  SCENE 2 — THE FLAT'S HALLWAY
+  //  Four doors: July's room, June's room, the living room /
+  //  kitchen, and the front door out to the stairwell.
   // ═══════════════════════════════════════════════════════
   scenes['scene-2'] = {
-    background: 'assets/stairwell.png',
-    spawn: { col: 5, row: 15 },
+    background: 'assets/hallway.png',
+    spawn: { col: 4, row: 16 },
     walkable:
-      "C3R15C4R15C5R15C6R15C7R15C8R15C9R15C10R15C11R15C12R15C13R15C14R15C15R15C16R15C17R15C18R15C19R15C20R15C21R15C22R15C23R15C24R15C25R15C26R15C27R15C28R15C3R16C4R16C5R16C6R16C7R16C8R16C9R16C10R16C11R16C12R16C13R16C14R16C15R16C16R16C17R16C18R16C19R16C20R16C21R16C22R16C23R16C24R16C25R16C26R16C27R16C28R16C3R17C4R17C5R17C6R17C7R17C8R17C9R17C10R17C11R17C12R17C13R17C14R17C15R17C16R17C17R17C18R17C19R17C20R17C21R17C22R17C23R17C24R17C25R17C26R17C27R17C28R17C3R18C4R18C5R18C6R18C7R18C8R18C9R18C10R18C11R18C12R18C13R18C14R18C15R18C16R18C17R18C18R18C19R18C20R18C21R18C22R18C23R18C24R18C25R18C26R18C27R18C28R18C1R16C2R16C1R17C2R17C1R18C2R18C29R16C30R16C29R17C30R17C29R18C30R18C12R14C13R14C14R14C15R14C16R14C17R14C18R14C19R14C20R14",
+      "C1R15C2R15C3R15C4R15C5R15C6R15C7R15C8R15C9R15C10R15C11R15C12R15C13R15C14R15C15R15C16R15C17R15C18R15C19R15C20R15C21R15C22R15C23R15C24R15C25R15C26R15C27R15C28R15C29R15C30R15C1R16C2R16C3R16C4R16C5R16C6R16C7R16C8R16C9R16C10R16C11R16C12R16C13R16C14R16C15R16C16R16C17R16C18R16C19R16C20R16C21R16C22R16C23R16C24R16C25R16C26R16C27R16C28R16C29R16C30R16C1R17C2R17C3R17C4R17C5R17C6R17C7R17C8R17C9R17C10R17C11R17C12R17C13R17C14R17C15R17C16R17C17R17C18R17C19R17C20R17C21R17C22R17C23R17C24R17C25R17C26R17C27R17C28R17C29R17C30R17C1R18C2R18C3R18C4R18C5R18C6R18C7R18C8R18C9R18C10R18C11R18C12R18C13R18C14R18C15R18C16R18C17R18C18R18C19R18C20R18C21R18C22R18C23R18C24R18C25R18C26R18C27R18C28R18C29R18C30R18C2R19C3R19C4R19C5R19C6R19C7R19C8R19C9R19C10R19C11R19C12R19C13R19C14R19C15R19C16R19C17R19C18R19C19R19C20R19C21R19C22R19C23R19C24R19C25R19C26R19C27R19C28R19C29R19",
 
     props: [
-      { sprite: 'june_idle', cell: 'C10R15', scale: 0.9325, when: (F) => !F.met_june },
+      { sprite: 'june_idle', cell: 'C8R16', scale: 0.9325, when: (F) => !F.kitchen_intro },
     ],
 
     interacts: [
-      // Back into July's room
-      { cells: "C4R15C5R15C6R15C7R15", icon: "C5R13", branches: [{ goto: 'scene-1', at: 'C18R4' }] },
+      // Far-left door → back into July's room
+      { cells: "C2R15C3R15C4R15C5R15", icon: "C4R13", branches: [{ goto: 'scene-1', at: 'C18R4' }] },
 
-      // Right door → kitchen / living room
+      // Second door → June's room
       {
-        cells: "C24R15C25R15C26R15C27R15C28R15",
-        icon: "C26R13",
+        cells: "C10R15C11R15C12R15C13R15",
+        icon: "C12R13",
         branches: [
           {
             when: (F) => !F.met_june,
-            lines: [{ speaker: 'july', sprite: 'july_idle', text: "June's standing right there. Walking past her would be its own kind of answer." }],
+            lines: [{ speaker: 'july', sprite: 'july_idle', text: "June's standing right there. Going into her room around her would be its own kind of answer." }],
           },
-          { goto: 'kitchen', at: 'C16R5' },
-        ],
-      },
-
-      // Left middle door → June's room
-      {
-        cells: "C12R14C13R14C14R14",
-        icon: "C13R12",
-        branches: [
           {
             when: (F) => !F.power_back,
             lines: [
@@ -327,10 +329,23 @@
         ],
       },
 
-      // Right middle door → front door / street
+      // Third door → living room / kitchen
       {
-        cells: "C18R14C19R14C20R14",
-        icon: "C19R12",
+        cells: "C18R15C19R15C20R15C21R15",
+        icon: "C20R13",
+        branches: [
+          {
+            when: (F) => !F.met_june,
+            lines: [{ speaker: 'july', sprite: 'july_idle', text: "June's standing right there. Walking past her would be its own kind of answer." }],
+          },
+          { goto: 'kitchen', at: 'C16R5' },
+        ],
+      },
+
+      // Far-right door → front door → stairwell / street
+      {
+        cells: "C27R15C28R15C29R15C30R15",
+        icon: "C28R13",
         branches: [
           {
             when: (F) => F.errand_done,
@@ -344,10 +359,12 @@
         ],
       },
 
-      // ── June on the landing ──
+
+      // ── June in the hallway ──
       {
-        cells: "C8R15C9R15C10R15C11R15C8R16C9R16C10R16C11R16",
-        icon: "C10R13",
+        cells: "C6R15C7R15C8R15C9R15C6R16C7R16C8R16C9R16",
+        icon: "C8R13",
+
         branches: [
           {
             when: (F) => !F.met_june,
@@ -356,7 +373,7 @@
               { speaker: 'june', sprite: 'june_idle-a', text: "You finally stepped out of the house." },
               { speaker: 'june', sprite: 'june_idle-b', text: "What took you so long?" },
               { speaker: 'july', sprite: 'july_idle', text: "The power's out." },
-              { speaker: 'june', sprite: 'june_idle', text: "I know. I've been sitting in the dark for two hours listening to you not wake up." },
+              { speaker: 'june', sprite: 'june_idle-a', text: "I know. I've been sitting in the dark for two hours listening to you not wake up." },
               { speaker: 'narrator', text: "She's still in last night's clothes. Her hair smells like somebody else's cigarettes." },
               { speaker: 'july', sprite: 'july_idle', text: "You didn't sleep here." },
               { speaker: 'june', sprite: 'june_anxious', text: "I did. I came in at two." },
@@ -397,7 +414,7 @@
             when: (F) => F.met_june && !F.kitchen_intro,
             objective: OBJ.kitchen,
             lines: [
-              { speaker: 'june', sprite: 'june_idle', text: "He's in the chair. Don't slam anything." },
+              { speaker: 'june', sprite: 'june_idle-a', text: "He's in the chair. Don't slam anything." },
               { speaker: 'june', sprite: 'june_idle-b', text: "And July — the power thing isn't a fuse. He didn't pay it. Again." },
               { speaker: 'july', sprite: 'july_idle', text: "I'll look at it." },
               { speaker: 'june', sprite: 'june_smug', text: "You always look at it." },
@@ -405,7 +422,7 @@
           },
           {
             lines: [
-              { speaker: 'june', sprite: 'june_idle', text: "I'm going to my room. Don't knock unless the building's on fire." },
+              { speaker: 'june', sprite: 'june_idle-a', text: "I'm going to my room. Don't knock unless the building's on fire." },
             ],
           },
         ],
@@ -450,8 +467,8 @@
     ],
 
     interacts: [
-      // Door back to landing
-      { cells: "C14R4C15R4C16R4C17R4C14R5C15R5C16R5C17R5", icon: "C15R3", branches: [{ goto: 'scene-2', at: 'C26R15' }] },
+      // Door back to the hallway
+      { cells: "C14R4C15R4C16R4C17R4C14R5C15R5C16R5C17R5", icon: "C15R3", branches: [{ goto: 'scene-2', at: 'C20R16' }] },
 
       // ── TV static ──
       {
@@ -716,7 +733,7 @@
             when: (F) => !F.has_fuse,
             lines: [{ speaker: 'july', sprite: 'july_idle', text: "Not without the fuse. I'm not walking back into that flat empty-handed." }],
           },
-          { goto: 'scene-2', at: 'C19R15' },
+          { goto: 'scene-2', at: 'C28R16' },
         ],
       },
 
@@ -836,6 +853,11 @@
     walkable:
       "C19R6C19R7C19R8C7R9C8R9C9R9C10R9C11R9C12R9C13R9C14R9C15R9C16R9C17R9C18R9C19R9C7R10C8R10C9R10C10R10C11R10C12R10C13R10C14R10C15R10C16R10C17R10C18R10C19R10C8R11C9R11C10R11C11R11C12R11C13R11C14R11C15R11C16R11C17R11C18R11C19R11C8R12C9R12C10R12C11R12C12R12C13R12C14R12C15R12C16R12C17R12C18R12C19R12C8R13C9R13C10R13C11R13C12R13C13R13C14R13C15R13C16R13C17R13C18R13C19R13C7R14C8R14C9R14C10R14C11R14C12R14C13R14C14R14C15R14C16R14C17R14C18R14C19R14C20R14C21R14C22R14C23R14C24R14C7R15C8R15C9R15C10R15C11R15C12R15C13R15C14R15C15R15C16R15C17R15C18R15C19R15C20R15C21R15C22R15C23R15C24R15C4R16C5R16C6R16C7R16C8R16C9R16C10R16C11R16C12R16C13R16C14R16C15R16C16R16C17R16C18R16C19R16C20R16C21R16C22R16C23R16C24R16C4R17C5R17C6R17C7R17C8R17C9R17C10R17C11R17C12R17C13R17C14R17C15R17C16R17C17R17C18R17C19R17C20R17C21R17C22R17C23R17C24R17C9R18C10R18C11R18C12R18C13R18",
 
+    props: [
+      // June climbs back in through the window once you've found all three things.
+      { sprite: 'june_idle', cell: 'C13R14', scale: 0.9, when: (F) => clues(F) >= 3 && !F.confronted },
+    ],
+
     enter: [
       {
         when: (F) => !F.clue_phone && !F.clue_cash && !F.clue_slip,
@@ -849,8 +871,7 @@
         ],
       },
       {
-        when: (F) => F.confronted && !F.balcony_called,
-        set: { balcony_called: true },
+        when: (F) => F.confronted && !F.chapter_done,
         objective: OBJ.balcony,
         lines: [
           { speaker: 'narrator', text: "Her room is empty. The plate of rice you left by the door hasn't been touched." },
@@ -861,7 +882,7 @@
 
     interacts: [
       // Door out
-      { cells: "C9R18C10R18C11R18C12R18C13R18", icon: "C11R19", branches: [{ goto: 'scene-2', at: 'C13R15' }] },
+      { cells: "C9R18C10R18C11R18C12R18C13R18", icon: "C11R19", branches: [{ goto: 'scene-2', at: 'C12R16' }] },
 
       // ── Clue 1: the second phone ──
       {
@@ -955,10 +976,10 @@
           },
           {
             when: (F) => !F.confronted,
-            set: { confronted: true },
+            set: { confronted: true, balcony_called: true },
             objective: OBJ.confront,
             lines: [
-              { speaker: 'narrator', text: "The window frame creaks. She comes in feet-first, the way she has since she was ten, and stops dead when she sees you standing in her room." },
+              { speaker: 'narrator', text: "She came in feet-first off the ladder, the way she has since she was ten, and she's been standing there ever since, jacket still on, watching you not leave." },
               { speaker: 'june', sprite: 'june_anxious', text: "...What are you doing." },
               { speaker: 'narrator', text: "The tin is open on the bed. The phone is face-up on the desk. There's no version of this where you were just passing through." },
               { speaker: 'june', sprite: 'june_upset', text: "You went through my things." },
@@ -1089,9 +1110,9 @@
             objective: OBJ.end,
             lines: [
               { speaker: 'narrator', text: "You stand next to her. Neither of you looks at the other. It's easier at this angle; it always has been." },
-              { speaker: 'june', sprite: 'june_idle', text: "You washed the dishes." },
+              { speaker: 'june', sprite: 'june_idle-a', text: "You washed the dishes." },
               { speaker: 'july', sprite: 'july_idle', text: "Yeah." },
-              { speaker: 'june', sprite: 'june_idle', text: "In cold water." },
+              { speaker: 'june', sprite: 'june_idle-a', text: "In cold water." },
               { speaker: 'july', sprite: 'july_idle', text: "There isn't any other kind." },
               { speaker: 'narrator', text: "Below, someone drags a bin across concrete. Eleven floors up it sounds almost like the sea." },
               { speaker: 'june', sprite: 'june_anxious', text: "He shouts at me too, you know. Kade. Not like Dad. Quieter. He does it in a way where I end up saying sorry." },
@@ -1147,6 +1168,189 @@
       },
     ],
   };
+
+  // ═══════════════════════════════════════════════════════
+  //  EPISODE 01 — ADDED CONTENT
+  //  Optional beats woven into the existing acts: the grey car
+  //  seen early, the mail on the hall table, Mum's calendar,
+  //  the payphone outside Oyo's, June's bus ticket, and the
+  //  bedsheet knot on the balcony.
+  // ═══════════════════════════════════════════════════════
+
+  // ── Act 1: July's window — the grey car, before you know what it is ──
+  scenes['scene-1'].interacts.push({
+    cells: "C26R7C27R7C26R8C27R8",
+    icon: "C27R5",
+    branches: [
+      {
+        when: (F) => !F.saw_car,
+        set: { saw_car: true },
+        lines: [
+          { speaker: 'narrator', text: "Eleven floors down, the car park is half puddle. A grey car sits across two bays with its lights off and someone still in the driver's seat." },
+          { speaker: 'july', sprite: 'july_idle', text: "Been there since I woke up. Nobody waits an hour in this car park for nothing." },
+          { speaker: 'narrator', text: "You watch until the cigarette in the window goes out. It gets lit again from the same hand." },
+          { speaker: 'july', sprite: 'july_idle', text: "...Not my business. Power first." },
+        ],
+      },
+      {
+        when: (F) => F.heard_about_kade && !F.chapter_done,
+        lines: [
+          { speaker: 'narrator', text: "The bay is empty now. Two clean rectangles of dry concrete where a car sat all afternoon." },
+          { speaker: 'july', sprite: 'july_angry', text: "Grey car. Engine running. He was outside our building all day and she let him wait." },
+        ],
+      },
+      { lines: [{ speaker: 'narrator', text: "Glass, dust, and the car park. The window's been painted shut since before you moved in." }] },
+    ],
+  });
+
+  // ── Act 2: the mail on the hall table ──
+  scenes['scene-2'].interacts.push({
+    cells: "C16R15C17R15C16R16C17R16",
+    icon: "C17R13",
+    branches: [
+      {
+        when: (F) => !F.read_notices,
+        set: { read_notices: true },
+        lines: [
+          { speaker: 'narrator', text: "The mail sits on the hall table under the dead plant. All of it addressed to your father, all of it opened by you." },
+          { speaker: 'narrator', text: "Northbank Power, red text. The school, twice. A card from a clinic with an appointment nobody attended." },
+          { speaker: 'july', sprite: 'july_idle', text: "The clinic one is June's. Booked in her own handwriting, in April, and never used." },
+          { speaker: 'july', sprite: 'july_idle', text: "She tried. That's the part I keep forgetting to hold onto." },
+          { speaker: 'narrator', text: "You put the red ones in your jacket and leave a supermarket flyer on the table, the way you always do." },
+        ],
+      },
+      { lines: [{ speaker: 'narrator', text: "Just the flyer now. You've already carried the rest." }] },
+    ],
+  });
+
+  // ── Act 3: the kitchen calendar — Mum's handwriting ──
+  scenes['kitchen'].interacts.push({
+    cells: "C11R16C12R16C11R17C12R17",
+    icon: "C11R15",
+    branches: [
+      {
+        when: (F) => !F.saw_calendar,
+        set: { saw_calendar: true },
+        lines: [
+          { speaker: 'narrator', text: "A calendar three years out of date, still on the nail. Nobody takes it down and nobody says why." },
+          { speaker: 'narrator', text: "Two squares are circled in Mum's blue pen: the 4th and the 22nd. June and July." },
+          { speaker: 'july', sprite: 'july_smile', text: "She used to circle them in January. Whole year planned out in one sitting, and then she'd forget the actual day." },
+          { speaker: 'july', sprite: 'july_idle', text: "June's is in eleven days. Mine was last month." },
+          { speaker: 'narrator', text: "You straighten it on the nail before you walk away. Quietly. Everything in this room is done quietly." },
+        ],
+      },
+      {
+        when: (F) => F.power_back,
+        lines: [
+          { speaker: 'narrator', text: "Under the hall bulb the blue circles look almost fresh." },
+          { speaker: 'july', sprite: 'july_idle', text: "Eleven days. Seeded bread and a plate she actually finishes. That's the whole plan." },
+        ],
+      },
+      { lines: [{ speaker: 'narrator', text: "Three years out of date. Two circles, still blue." }] },
+    ],
+  });
+
+  // ── Act 4: the payphone outside Oyo's ──
+  scenes['store'].interacts.push({
+    cells: "C25R11C26R11C27R11C25R12C26R12C27R12",
+    icon: "C26R10",
+    branches: [
+      {
+        when: (F) => F.heard_about_kade && !F.used_payphone,
+        set: { used_payphone: true },
+        lines: [
+          { speaker: 'narrator', text: "A payphone that still works, because nobody on this street has credit. Someone has scratched a number into the metal beside the keypad." },
+          { speaker: 'july', sprite: 'july_idle', text: "Phone card. Forty dollars. She bought a card so she could call somebody without it showing up on the house line." },
+          { speaker: 'narrator', text: "You feed in a coin and dial the scratched number before you can talk yourself out of it. It rings four times." },
+          { speaker: 'phone', text: "Yeah?" },
+          { speaker: 'narrator', text: "A young man's voice. Music behind it, and a car engine idling." },
+          {
+            speaker: 'narrator',
+            text: "Say something?",
+            choices: [
+              {
+                label: '"Stay away from my sister."',
+                set: { trust: -1 },
+                lines: [
+                  { speaker: 'july', sprite: 'july_angry', text: "Stay away from June. I know about the tab, I know about the car, and I know what four in the morning means." },
+                  { speaker: 'phone', text: "...Huh. You're the brother." },
+                  { speaker: 'phone', text: "She talks about you, you know. Not the way you'd like." },
+                  { speaker: 'narrator', text: "The line goes dead first. He hung up on you, and he did it gently, which is somehow worse." },
+                ],
+              },
+              {
+                label: 'Say nothing. Listen.',
+                set: { trust: 1 },
+                lines: [
+                  { speaker: 'narrator', text: "You hold the receiver and don't breathe into it." },
+                  { speaker: 'phone', text: "June? If that's you, I'm outside. Just come down, I'm not doing this on the phone again." },
+                  { speaker: 'phone', text: "Look — I'm not angry. I'm just tired of you making me the bad one." },
+                  { speaker: 'narrator', text: "You set the receiver back on the hook very carefully, like it might wake someone." },
+                  { speaker: 'july', sprite: 'july_idle', text: "That's Dad's sentence. Word for word, that's Dad's sentence." },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        when: (F) => F.used_payphone,
+        lines: [{ speaker: 'narrator', text: "The payphone. The scratched number. You've memorised it now whether you wanted to or not." }],
+      },
+      { lines: [{ speaker: 'narrator', text: "A payphone with the coin slot taped up and half a number scratched into the metal." }] },
+    ],
+  });
+
+  // ── Act 5: June's schoolbag — the bus ticket ──
+  scenes['june-room'].interacts.push({
+    cells: "C22R15C23R15C22R16C23R16",
+    icon: "C22R14",
+    branches: [
+      {
+        when: (F) => !F.found_ticket,
+        set: { found_ticket: true },
+        lines: [
+          { speaker: 'narrator', text: "Her school bag, still packed for a Tuesday she never went to. Inside: one textbook, a hoodie that isn't hers, and a folded bus ticket." },
+          { speaker: 'narrator', text: "A coach ticket. One way, Northbank to Harrow, dated the end of the month. Bought with cash. One passenger." },
+          { speaker: 'july', sprite: 'july_idle', text: "One. Not two." },
+          { speaker: 'july', sprite: 'july_idle', text: "She's not running away with him. She's running away from all of it, and she's doing it alone, and she was never going to tell me." },
+          { speaker: 'narrator', text: "You fold it exactly as it was and put it back in the pocket you found it in. Some things you don't get to have found." },
+        ],
+      },
+      {
+        when: (F) => F.confronted,
+        lines: [{ speaker: 'july', sprite: 'july_idle', text: "End of the month. Eleven days after her birthday. She even worked around the cake." }],
+      },
+      { lines: [{ speaker: 'narrator', text: "The bag is where you left it, packed for a day that already happened." }] },
+    ],
+  });
+
+  // ── Act 6: the balcony — the bedsheet knot ──
+  scenes['scene-1.5'].interacts.push({
+    cells: "C4R12C5R12C6R12C4R13C5R13C6R13",
+    icon: "C5R11",
+    branches: [
+      {
+        when: (F) => !F.saw_sheet_knot,
+        set: { saw_sheet_knot: true },
+        lines: [
+          { speaker: 'narrator', text: "A strip of old bedsheet is still knotted around the corner post, bleached white by four summers." },
+          { speaker: 'july', sprite: 'july_smile', text: "She tied that knot. Nine years old, tongue out, absolutely certain we were going to sail the building to the sea." },
+          { speaker: 'narrator', text: "You never untied it. You told yourself it was because the knot was too tight." },
+          { speaker: 'july', sprite: 'july_idle', text: "Everything in this family is a knot nobody wants to be the one to cut." },
+        ],
+      },
+      {
+        when: (F) => F.chapter_done,
+        lines: [
+          { speaker: 'narrator', text: "The knot is still there. It'll outlast the sheet, the balcony, and probably the both of you." },
+        ],
+      },
+      { lines: [{ speaker: 'narrator', text: "White cloth, hard knot, four summers of sun." }] },
+    ],
+  });
+
+
 
   window.STORY = {
     scenes: scenes,
